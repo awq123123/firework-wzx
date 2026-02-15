@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数字烟花（带音效+图片）</title>
+    <title>数字烟花 - 多点触控+音效+随机图片</title>
     <style>
         * {
             margin: 0;
@@ -23,20 +23,9 @@
             max-width: 100%;
             height: auto;
         }
-        /* 提示文字（解决音效自动播放限制） */
-        .tip {
-            position: fixed;
-            top: 20px;
-            color: #fff;
-            font-size: 14px;
-            text-align: center;
-            width: 100%;
-            pointer-events: none;
-        }
     </style>
 </head>
 <body>
-    <div class="tip">点击屏幕任意位置开始播放音效</div>
     <canvas id="fireworkCanvas" width="400" height="600"></canvas>
 
     <script>
@@ -48,18 +37,11 @@
         const FONT_HEIGHT = 40;
         const FIREWORK_SPEED = 0.5;
         const PARTICLE_COUNT = 15;
+        // 图片显示的固定位置（窗口正上方居中）
+        const IMAGE_POS_X = CANVAS_WIDTH / 2 - 50;
+        const IMAGE_POS_Y = 0;
 
-        // ========== 替换为你自己的文件链接 ==========
-        // 音效链接（GitHub Raw链接）
-        const RISE_AUDIO_URL = "https://raw.githubusercontent.com/awq123123/firework-wzx/main/rise.mp3";
-        const BOOM_AUDIO_URL = "https://raw.githubusercontent.com/awq123123/firework-wzx/main/boom.mp3";
-        // 图片链接（GitHub Raw链接）
-        const IMG1_URL = "https://raw.githubusercontent.com/awq123123/firework-wzx/main/ellip.png";
-        const IMG2_URL = "https://raw.githubusercontent.com/awq123123/firework-wzx/main/0.png";
-        const IMG3_URL = "https://raw.githubusercontent.com/awq123123/firework-wzx/main/dif.png";
-        // ==========================================
-
-        // 初始化画布
+        // 获取画布上下文
         const canvas = document.getElementById('fireworkCanvas');
         const ctx = canvas.getContext('2d');
         canvas.width = CANVAS_WIDTH;
@@ -72,59 +54,93 @@
             [188,0,255], [255,0,239], [0,255,51]
         ];
 
-        // ========== 音效初始化（解决浏览器自动播放限制） ==========
-        let riseAudio, boomAudio;
-        let audioInited = false;
+        // ====================== 音频资源初始化 ======================
+        let riseAudio, explodeAudio;
+        
+        function preloadAudios() {
+            return new Promise((resolve) => {
+                let loadedCount = 0;
 
-        // 预加载音效
-        function initAudio() {
-            riseAudio = new Audio(RISE_AUDIO_URL);
-            boomAudio = new Audio(BOOM_AUDIO_URL);
-            // 循环播放/音量设置
-            riseAudio.volume = 0.5;
-            boomAudio.volume = 0.5;
-            audioInited = true;
-        }
+                // 上升音效（约1s）
+                riseAudio = new Audio();
+                riseAudio.src = 'rise.mp3'; // 和HTML并列的音频文件
+                riseAudio.preload = 'auto';
+                riseAudio.volume = 0.7; // 可调整：0=静音，1=最大
+                riseAudio.oncanplaythrough = () => {
+                    loadedCount++;
+                    checkLoaded();
+                };
 
-        // 播放音效的封装函数
-        function playAudio(audio) {
-            if (!audioInited) return;
-            audio.currentTime = 0; // 重置播放位置
-            audio.play().catch(err => {
-                console.log("音效播放失败（需先点击屏幕）：", err);
+                // 爆炸音效（约0.8s）
+                explodeAudio = new Audio();
+                explodeAudio.src = 'explode.mp3'; // 和HTML并列的音频文件
+                explodeAudio.preload = 'auto';
+                explodeAudio.volume = 0.8; // 可调整：0=静音，1=最大
+                explodeAudio.oncanplaythrough = () => {
+                    loadedCount++;
+                    checkLoaded();
+                };
+
+                // 容错处理
+                function handleAudioError() {
+                    loadedCount++;
+                    checkLoaded();
+                }
+                riseAudio.onerror = handleAudioError;
+                explodeAudio.onerror = handleAudioError;
+
+                function checkLoaded() {
+                    if (loadedCount >= 2) {
+                        resolve();
+                    }
+                }
             });
         }
 
-        // ========== 图片初始化 ==========
-        let img1, img2, img3;
-        let imagesLoaded = false;
-
-        // 预加载图片
-        function initImages() {
-            img1 = new Image();
-            img2 = new Image();
-            img3 = new Image();
-            
-            let loadedCount = 0;
-            const checkLoaded = () => {
-                loadedCount++;
-                if (loadedCount === 3) imagesLoaded = true;
-            };
-
-            img1.src = IMG1_URL;
-            img1.onload = checkLoaded;
-            img2.src = IMG2_URL;
-            img2.onload = checkLoaded;
-            img3.src = IMG3_URL;
-            img3.onload = checkLoaded;
-
-            // 图片加载失败的容错
-            img1.onerror = () => { console.log("图片1加载失败"); };
-            img2.onerror = () => { console.log("图片2加载失败"); };
-            img3.onerror = () => { console.log("图片3加载失败"); };
+        // 播放音频工具函数
+        function playAudio(audio) {
+            if (!audio) return;
+            audio.currentTime = 0;
+            audio.play().catch(err => {
+                console.log('音频播放失败（需先点击页面激活）:', err);
+            });
         }
 
-        // ========== 星星系统 ==========
+        // ====================== 图片资源初始化 ======================
+        const images = [];
+        // 图片和HTML并列时直接写文件名
+        const imagePaths = [
+            'image1.png',
+            'image2.png',
+            'image3.png'
+        ];
+
+        function preloadImages() {
+            return new Promise((resolve) => {
+                let loadedCount = 0;
+                
+                imagePaths.forEach((path, index) => {
+                    const img = new Image();
+                    img.src = path;
+                    img.onload = () => {
+                        images[index] = img;
+                        loadedCount++;
+                        if (loadedCount === imagePaths.length) {
+                            resolve();
+                        }
+                    };
+                    img.onerror = () => {
+                        console.error(`图片加载失败: ${path}`);
+                        loadedCount++;
+                        if (loadedCount === imagePaths.length) {
+                            resolve();
+                        }
+                    };
+                });
+            });
+        }
+
+        // ====================== 星星系统 ======================
         let stars = [];
         function initStars() {
             stars = [];
@@ -158,7 +174,7 @@
             }
         }
 
-        // ========== 粒子系统 ==========
+        // ====================== 粒子系统 ======================
         class Particle {
             constructor(x, y, vx, vy, life, color) {
                 this.x = x;
@@ -174,6 +190,7 @@
                 this.y += this.vy;
                 this.vy += 0.5;
                 this.life--;
+
                 ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
@@ -181,7 +198,7 @@
             }
         }
 
-        // ========== 烟花系统（加音效+图片） ==========
+        // ====================== 烟花系统 ======================
         class Firework {
             constructor(targetX, targetY) {
                 this.x = targetX;
@@ -190,19 +207,19 @@
                 this.color = colorList[Math.floor(Math.random() * colorList.length)];
                 this.drops = [CANVAS_HEIGHT / FONT_HEIGHT];
                 this.exploded = false;
-                this.risePlayed = false; // 上升音效是否播放
+                this.riseAudioPlayed = false;
             }
 
             update() {
                 if (this.exploded) return;
 
-                // 播放上升音效（只播一次）
-                if (!this.risePlayed) {
+                // 播放上升音效（仅一次）
+                if (!this.riseAudioPlayed) {
                     playAudio(riseAudio);
-                    this.risePlayed = true;
+                    this.riseAudioPlayed = true;
                 }
 
-                // 数字拖尾
+                // 数字拖尾更新
                 for (let i = 0; i < this.drops.length; i++) {
                     const text = Math.floor(Math.random() * 10).toString();
                     ctx.font = `${FONT_SIZE}px "Microsoft YaHei", "SimHei", Arial`;
@@ -212,20 +229,28 @@
                     ctx.fillText(text, xPos, yPos);
                     this.drops[i] -= this.speed;
 
-                    // 爆炸触发（加爆炸音效+图片）
+                    // 触发爆炸
                     if (this.drops[i] * FONT_HEIGHT <= this.targetY && !this.exploded) {
                         this.exploded = true;
-                        // 播放爆炸音效
-                        playAudio(boomAudio);
-                        // 生成粒子
                         this.createParticles(xPos + 10, yPos);
-                        // 随机显示图片
-                        this.showRandomImage(xPos + 10, yPos);
                     }
                 }
             }
 
             createParticles(x, y) {
+                // 播放爆炸音效
+                playAudio(explodeAudio);
+
+                // 1/10概率显示图片（窗口正上方居中）
+                const rand = Math.floor(Math.random() * 10) + 1;
+                if (rand === 1) {
+                    const imgIndex = Math.floor(Math.random() * 3);
+                    if (images[imgIndex]) {
+                        ctx.drawImage(images[imgIndex], IMAGE_POS_X, IMAGE_POS_Y);
+                    }
+                }
+
+                // 生成粒子
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
                     const vx = Math.floor(Math.random() * 17) - 8;
                     const vy = Math.floor(Math.random() * 11) - 15;
@@ -233,50 +258,40 @@
                     particles.push(new Particle(x, y, vx, vy, life, this.color));
                 }
             }
-
-            // 随机显示图片
-            showRandomImage(x, y) {
-                if (!imagesLoaded) return;
-                const rand = Math.floor(Math.random() * 1000) + 1;
-                let img = null;
-                if (rand === 1) img = img1;
-                if (rand === 2) img = img2;
-                if (rand === 3) img = img3;
-                
-                if (img) {
-                    // 图片居中显示
-                    ctx.drawImage(img, x - 50, y - 50, 100, 100);
-                } else {
-                    // 图片加载失败时显示色块
-                    const randomColor = colorList[Math.floor(Math.random() * colorList.length)];
-                    ctx.fillStyle = `rgb(${randomColor[0]}, ${randomColor[1]}, ${randomColor[2]})`;
-                    ctx.fillRect(x - 50, y - 50, 100, 100);
-                }
-            }
         }
 
-        // ========== 全局变量 & 交互 ==========
+        // ====================== 全局变量 & 多点触控交互 ======================
         let fireworks = [];
         let particles = [];
 
-        // 点击事件（初始化音效+触发烟花）
-        canvas.addEventListener('click', (e) => {
-            // 首次点击初始化音效（解决浏览器自动播放限制）
-            if (!audioInited) initAudio();
-            if (!imagesLoaded) initImages();
-
+        // 统一生成烟花的函数
+        function createFireworkAtPosition(clientX, clientY) {
             const rect = canvas.getBoundingClientRect();
-            const clickX = (e.clientX - rect.left) * (CANVAS_WIDTH / rect.width);
-            const clickY = (e.clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
+            const clickX = (clientX - rect.left) * (CANVAS_WIDTH / rect.width);
+            const clickY = (clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
             fireworks.push(new Firework(clickX, clickY));
+        }
 
-            // 隐藏提示文字
-            document.querySelector('.tip').style.display = 'none';
+        // 1. 鼠标点击（兼容电脑）
+        canvas.addEventListener('click', (e) => {
+            createFireworkAtPosition(e.clientX, e.clientY);
         });
 
-        // ========== 主循环 ==========
+        // 2. 触屏多点触控（支持多手指同时点击）
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // 阻止默认触屏行为（缩放/滚动）
+            // 循环处理所有同时按下的手指触点
+            for (let i = 0; i < e.touches.length; i++) {
+                const touch = e.touches[i];
+                createFireworkAtPosition(touch.clientX, touch.clientY);
+            }
+        }, { passive: false });
+
+        // ====================== 主循环 ======================
         function mainLoop() {
             requestAnimationFrame(mainLoop);
+
+            // 半透明遮罩保留拖尾
             ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -304,9 +319,13 @@
             particles = activeParticles;
         }
 
-        // 初始化
+        // ====================== 初始化 ======================
         initStars();
-        mainLoop();
+        // 并行加载音频和图片后启动
+        Promise.all([preloadAudios(), preloadImages()]).then(() => {
+            mainLoop();
+            window.dispatchEvent(new Event('resize'));
+        });
 
         // 窗口适配
         window.addEventListener('resize', () => {
@@ -318,5 +337,4 @@
         });
     </script>
 </body>
-
 </html>
