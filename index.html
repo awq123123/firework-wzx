@@ -70,7 +70,7 @@
                 riseAudio = new Audio();
                 riseAudio.src = './rise.mp3';
                 riseAudio.preload = 'auto';
-                riseAudio.volume = 0.7;
+                riseAudio.volume = 0.2;
                 riseAudio.oncanplaythrough = () => {
                     loadedCount++;
                     checkLoaded();
@@ -79,7 +79,7 @@
                 explodeAudio = new Audio();
                 explodeAudio.src = './explode.mp3';
                 explodeAudio.preload = 'auto';
-                explodeAudio.volume = 0.8;
+                explodeAudio.volume = 1;
                 explodeAudio.oncanplaythrough = () => {
                     loadedCount++;
                     checkLoaded();
@@ -503,3 +503,4 @@
     </script>
 </body>
 </html>
+
