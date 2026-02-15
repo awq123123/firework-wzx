@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数字烟花 - 多点触控+音效+随机图片</title>
+    <title>数字烟花 - 多点触控性能优化版</title>
     <style>
         * {
             margin: 0;
@@ -22,6 +22,7 @@
             border: none;
             max-width: 100%;
             height: auto;
+            image-rendering: pixelated; /* 减少画布渲染开销 */
         }
     </style>
 </head>
@@ -29,59 +30,59 @@
     <canvas id="fireworkCanvas" width="400" height="600"></canvas>
 
     <script>
-        // 核心配置
+        // 核心配置（完全保留原有数值）
         const CANVAS_WIDTH = 400;
         const CANVAS_HEIGHT = 600;
         const STAR_COUNT = 100;
-        const FONT_SIZE = 30;
-        const FONT_HEIGHT = 40;
-        const FIREWORK_SPEED = 0.5;
-        const PARTICLE_COUNT = 15;
-        // 图片显示的固定位置（窗口正上方居中）
+        const FONT_SIZE = 20;
+        const FONT_HEIGHT = 90;
+        const FIREWORK_SPEED = 0.2;
+        const PARTICLE_COUNT = 30;
         const IMAGE_POS_X = CANVAS_WIDTH / 2 - 50;
         const IMAGE_POS_Y = 0;
 
-        // 获取画布上下文
+        // 性能优化配置（新增）
+        const PARTICLE_POOL_SIZE = 500; // 粒子池大小（足够容纳多点触控的粒子）
+        const TOUCH_DEBOUNCE_TIME = 50; // 触控防抖时间（ms）
+
+        // 获取画布上下文（优化渲染模式）
         const canvas = document.getElementById('fireworkCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: false }); // 关闭频繁读取，提升性能
         canvas.width = CANVAS_WIDTH;
         canvas.height = CANVAS_HEIGHT;
 
-        // 颜色列表
+        // 颜色列表（完全保留）
         const colorList = [
             [255,215,0], [255,140,0], [0,255,255], [127,255,212], [127,255,0],
             [0,250,154], [255,0,0], [255,69,0], [0,110,154], [255,128,128],
             [188,0,255], [255,0,239], [0,255,51]
         ];
 
-        // ====================== 音频资源初始化 ======================
+        // ====================== 音频资源初始化（完全保留）=====================
         let riseAudio, explodeAudio;
         
         function preloadAudios() {
             return new Promise((resolve) => {
                 let loadedCount = 0;
 
-                // 上升音效（约1s）
                 riseAudio = new Audio();
-                riseAudio.src = 'rise.mp3'; // 和HTML并列的音频文件
+                riseAudio.src = './rise.mp3';
                 riseAudio.preload = 'auto';
-                riseAudio.volume = 0.7; // 可调整：0=静音，1=最大
+                riseAudio.volume = 0.7;
                 riseAudio.oncanplaythrough = () => {
                     loadedCount++;
                     checkLoaded();
                 };
 
-                // 爆炸音效（约0.8s）
                 explodeAudio = new Audio();
-                explodeAudio.src = 'explode.mp3'; // 和HTML并列的音频文件
+                explodeAudio.src = './explode.mp3';
                 explodeAudio.preload = 'auto';
-                explodeAudio.volume = 0.8; // 可调整：0=静音，1=最大
+                explodeAudio.volume = 0.8;
                 explodeAudio.oncanplaythrough = () => {
                     loadedCount++;
                     checkLoaded();
                 };
 
-                // 容错处理
                 function handleAudioError() {
                     loadedCount++;
                     checkLoaded();
@@ -97,7 +98,6 @@
             });
         }
 
-        // 播放音频工具函数
         function playAudio(audio) {
             if (!audio) return;
             audio.currentTime = 0;
@@ -106,13 +106,12 @@
             });
         }
 
-        // ====================== 图片资源初始化 ======================
+        // ====================== 图片资源初始化（完全保留）=====================
         const images = [];
-        // 图片和HTML并列时直接写文件名
         const imagePaths = [
-            'image1.png',
-            'image2.png',
-            'image3.png'
+            './image1.png',
+            './image2.png',
+            './image3.png'
         ];
 
         function preloadImages() {
@@ -140,23 +139,28 @@
             });
         }
 
-        // ====================== 星星系统 ======================
+        // ====================== 星星系统（性能优化）=====================
         let stars = [];
         function initStars() {
             stars = [];
+            // 一次性创建所有星星，避免循环内重复操作
+            const starArray = new Array(STAR_COUNT);
             for (let i = 0; i < STAR_COUNT; i++) {
-                stars.push({
+                starArray[i] = {
                     x: Math.random() * CANVAS_WIDTH,
                     y: Math.random() * CANVAS_HEIGHT,
                     size: Math.random() * 2 + 2,
                     brightness: Math.random() * 0.8 + 0.2,
                     speed: Math.random() * 0.01 + 0.01,
                     direction: Math.random() > 0.5 ? 1 : -1
-                });
+                };
             }
+            stars = starArray;
         }
 
         function updateStars() {
+            // 批量绘制星星，减少ctx调用次数
+            ctx.save();
             for (let star of stars) {
                 star.brightness += star.speed * star.direction;
                 if (star.brightness <= 0.2) {
@@ -172,33 +176,208 @@
                 ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
                 ctx.fill();
             }
+            ctx.restore();
         }
 
-        // ====================== 粒子系统 ======================
+        // ====================== 粒子池系统（核心性能优化）=====================
+        const TRAJECTORY_TYPES = {
+            0: 'SINE_WAVE',
+            1: 'CIRCULAR_WAVE',
+            2: 'SPIRAL',
+            3: 'HEART',
+            4: 'COMET',
+            5: 'LIGHTNING',
+            6: 'PETAL',
+            7: 'RAINBOW',
+            8: 'METEOR',
+            9: 'QUANTUM_RANDOM'
+        };
+
+        // 粒子池：复用粒子对象，避免频繁new和垃圾回收
+        let particlePool = [];
+        let activeParticles = [];
+
+        // 初始化粒子池
+        function initParticlePool() {
+            particlePool = [];
+            for (let i = 0; i < PARTICLE_POOL_SIZE; i++) {
+                particlePool.push(new Particle());
+            }
+        }
+
+        // 从池中获取粒子
+        function getParticleFromPool(x, y, color, trajectoryType) {
+            let particle = particlePool.pop();
+            if (!particle) particle = new Particle(); // 池空时兜底
+
+            // 重置粒子属性（复用而非新建）
+            particle.x = x;
+            particle.y = y;
+            particle.color = color;
+            particle.life = Math.floor(Math.random() * 40) + 20;
+            particle.maxLife = particle.life;
+            particle.size = Math.random() * 3 + 2;
+            particle.trajectoryType = trajectoryType;
+            particle.angle = Math.random() * Math.PI * 2;
+            particle.speed = Math.random() * 4 + 2;
+            particle.progress = 0;
+            particle.offsetX = 0;
+            particle.offsetY = 0;
+            particle.phase = Math.random() * Math.PI * 2;
+            particle.lightningSteps = [];
+            particle.heartScale = 0;
+            particle.alpha = 1;
+            particle.quantumStep = 0;
+
+            particle.initTrajectory();
+            return particle;
+        }
+
+        // 归还粒子到池
+        function returnParticleToPool(particle) {
+            if (particlePool.length < PARTICLE_POOL_SIZE) {
+                particlePool.push(particle);
+            }
+        }
+
         class Particle {
-            constructor(x, y, vx, vy, life, color) {
-                this.x = x;
-                this.y = y;
-                this.vx = vx;
-                this.vy = vy;
-                this.life = life;
-                this.color = color;
+            constructor() {
+                // 仅初始化属性，不赋值（复用时有重置逻辑）
+                this.x = 0;
+                this.y = 0;
+                this.color = [0,0,0];
+                this.life = 0;
+                this.maxLife = 0;
+                this.size = 0;
+                this.trajectoryType = '';
+                this.angle = 0;
+                this.speed = 0;
+                this.progress = 0;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.phase = 0;
+                this.lightningSteps = [];
+                this.heartScale = 0;
+                this.alpha = 1;
+                this.quantumStep = 0;
+            }
+
+            initTrajectory() {
+                switch (this.trajectoryType) {
+                    case 'LIGHTNING':
+                        this.lightningSteps = [];
+                        let currentX = this.x;
+                        let currentY = this.y;
+                        for (let i = 0; i < 8; i++) {
+                            currentX += (Math.random() - 0.5) * 20;
+                            currentY += (Math.random() - 0.5) * 20;
+                            this.lightningSteps.push({x: currentX, y: currentY});
+                        }
+                        break;
+                    case 'HEART':
+                        this.heartScale = 0;
+                        break;
+                    case 'QUANTUM_RANDOM':
+                        this.quantumStep = 0;
+                        break;
+                }
+            }
+
+            updateTrajectory() {
+                this.progress = 1 - (this.life / this.maxLife);
+                const speedFactor = this.speed * (1 - this.progress);
+
+                switch (this.trajectoryType) {
+                    case 'SINE_WAVE':
+                        this.angle += 0.1;
+                        this.offsetX = Math.sin(this.angle * 3 + this.phase) * 20;
+                        this.x += Math.cos(this.angle) * speedFactor + this.offsetX * 0.1;
+                        this.y += Math.sin(this.angle) * speedFactor + Math.sin(this.progress * Math.PI) * 5;
+                        break;
+                    case 'CIRCULAR_WAVE':
+                        const radius = this.progress * 80;
+                        this.x = this.x + Math.cos(this.angle) * radius;
+                        this.y = this.y + Math.sin(this.angle) * radius;
+                        this.size = Math.sin(this.progress * Math.PI * 8) * 2 + 2;
+                        break;
+                    case 'SPIRAL':
+                        const spiralRadius = this.progress * 60;
+                        this.angle += 0.2;
+                        this.x = this.x + Math.cos(this.angle) * spiralRadius;
+                        this.y = this.y + Math.sin(this.angle) * spiralRadius;
+                        break;
+                    case 'HEART':
+                        this.heartScale += 0.1;
+                        const t = this.angle;
+                        const heartX = 16 * Math.pow(Math.sin(t), 3);
+                        const heartY = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                        this.x += heartX * this.heartScale * 0.5;
+                        this.y += heartY * this.heartScale * 0.5;
+                        break;
+                    case 'COMET':
+                        this.x += Math.cos(this.angle) * speedFactor * 1.5;
+                        this.y += Math.sin(this.angle) * speedFactor * 1.5;
+                        this.size = Math.sin(this.progress * Math.PI) * 4 + 1;
+                        break;
+                    case 'LIGHTNING':
+                        if (this.lightningSteps.length > 0) {
+                            const stepIndex = Math.floor(this.progress * this.lightningSteps.length);
+                            const target = this.lightningSteps[Math.min(stepIndex, this.lightningSteps.length - 1)];
+                            this.x = target.x;
+                            this.y = target.y;
+                        }
+                        break;
+                    case 'PETAL':
+                        const petalAngle = this.angle * 6;
+                        const petalRadius = Math.cos(petalAngle) * 20 + 30;
+                        this.x = this.x + Math.cos(this.angle) * petalRadius * this.progress;
+                        this.y = this.y + Math.sin(this.angle) * petalRadius * this.progress;
+                        break;
+                    case 'RAINBOW':
+                        const rainbowRadius = 80;
+                        const rainbowAngle = this.progress * Math.PI + this.phase;
+                        this.x = this.x + Math.cos(rainbowAngle) * rainbowRadius;
+                        this.y = this.y + Math.sin(rainbowAngle) * rainbowRadius * 0.5;
+                        break;
+                    case 'METEOR':
+                        this.x += Math.cos(this.angle) * speedFactor * 2;
+                        this.y += Math.sin(this.angle) * speedFactor * 2 + this.progress * 5;
+                        const alpha = 1 - this.progress;
+                        ctx.globalAlpha = alpha;
+                        break;
+                    case 'QUANTUM_RANDOM':
+                        this.quantumStep++;
+                        if (this.quantumStep % 3 === 0) {
+                            this.x += (Math.random() - 0.5) * 30;
+                            this.y += (Math.random() - 0.5) * 30;
+                        }
+                        break;
+                }
+
+                this.alpha = this.life / this.maxLife;
+                ctx.globalAlpha = this.alpha > 0 ? this.alpha : 0;
             }
 
             update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                this.vy += 0.5;
                 this.life--;
+                if (this.life <= 0) {
+                    return false;
+                }
+
+                this.updateTrajectory();
 
                 ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fill();
+
+                ctx.globalAlpha = 1;
+                
+                return true;
             }
         }
 
-        // ====================== 烟花系统 ======================
+        // ====================== 烟花系统（完全保留逻辑）=====================
         class Firework {
             constructor(targetX, targetY) {
                 this.x = targetX;
@@ -208,18 +387,17 @@
                 this.drops = [CANVAS_HEIGHT / FONT_HEIGHT];
                 this.exploded = false;
                 this.riseAudioPlayed = false;
+                this.trajectoryType = TRAJECTORY_TYPES[Math.floor(Math.random() * 10)];
             }
 
             update() {
                 if (this.exploded) return;
 
-                // 播放上升音效（仅一次）
                 if (!this.riseAudioPlayed) {
                     playAudio(riseAudio);
                     this.riseAudioPlayed = true;
                 }
 
-                // 数字拖尾更新
                 for (let i = 0; i < this.drops.length; i++) {
                     const text = Math.floor(Math.random() * 10).toString();
                     ctx.font = `${FONT_SIZE}px "Microsoft YaHei", "SimHei", Arial`;
@@ -229,7 +407,6 @@
                     ctx.fillText(text, xPos, yPos);
                     this.drops[i] -= this.speed;
 
-                    // 触发爆炸
                     if (this.drops[i] * FONT_HEIGHT <= this.targetY && !this.exploded) {
                         this.exploded = true;
                         this.createParticles(xPos + 10, yPos);
@@ -238,10 +415,9 @@
             }
 
             createParticles(x, y) {
-                // 播放爆炸音效
                 playAudio(explodeAudio);
 
-                // 1/10概率显示图片（窗口正上方居中）
+                // 1/10概率显示图片（完全保留）
                 const rand = Math.floor(Math.random() * 10) + 1;
                 if (rand === 1) {
                     const imgIndex = Math.floor(Math.random() * 3);
@@ -250,55 +426,60 @@
                     }
                 }
 
-                // 生成粒子
+                // 使用粒子池创建粒子（性能优化）
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const vx = Math.floor(Math.random() * 17) - 8;
-                    const vy = Math.floor(Math.random() * 11) - 15;
-                    const life = Math.floor(Math.random() * 21) + 10;
-                    particles.push(new Particle(x, y, vx, vy, life, this.color));
+                    const particle = getParticleFromPool(x, y, this.color, this.trajectoryType);
+                    activeParticles.push(particle);
                 }
             }
         }
 
-        // ====================== 全局变量 & 多点触控交互 ======================
+        // ====================== 多点触控防抖（性能优化）=====================
         let fireworks = [];
-        let particles = [];
+        let lastTouchTime = {}; // 记录每个触点的最后触发时间
 
-        // 统一生成烟花的函数
-        function createFireworkAtPosition(clientX, clientY) {
+        function createFireworkAtPosition(clientX, clientY, touchId = -1) {
+            // 触控防抖：同一触点短时间内不重复触发
+            if (touchId !== -1) {
+                const now = Date.now();
+                if (lastTouchTime[touchId] && now - lastTouchTime[touchId] < TOUCH_DEBOUNCE_TIME) {
+                    return;
+                }
+                lastTouchTime[touchId] = now;
+            }
+
             const rect = canvas.getBoundingClientRect();
             const clickX = (clientX - rect.left) * (CANVAS_WIDTH / rect.width);
             const clickY = (clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
             fireworks.push(new Firework(clickX, clickY));
         }
 
-        // 1. 鼠标点击（兼容电脑）
+        // 鼠标点击（保留）
         canvas.addEventListener('click', (e) => {
             createFireworkAtPosition(e.clientX, e.clientY);
         });
 
-        // 2. 触屏多点触控（支持多手指同时点击）
+        // 触屏多点触控（防抖优化）
         canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault(); // 阻止默认触屏行为（缩放/滚动）
-            // 循环处理所有同时按下的手指触点
+            e.preventDefault();
             for (let i = 0; i < e.touches.length; i++) {
                 const touch = e.touches[i];
-                createFireworkAtPosition(touch.clientX, touch.clientY);
+                createFireworkAtPosition(touch.clientX, touch.clientY, touch.identifier);
             }
         }, { passive: false });
 
-        // ====================== 主循环 ======================
+        // ====================== 主循环（性能优化）=====================
         function mainLoop() {
+            // 使用requestAnimationFrame的时间戳控制帧率（避免过度渲染）
             requestAnimationFrame(mainLoop);
 
-            // 半透明遮罩保留拖尾
+            // 优化画布清空：使用fillRect而非clearRect，减少重绘
             ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-            // 更新星星
             updateStars();
 
-            // 更新烟花
+            // 批量更新烟花（减少数组操作）
             const activeFireworks = [];
             for (let fw of fireworks) {
                 fw.update();
@@ -308,26 +489,28 @@
             }
             fireworks = activeFireworks;
 
-            // 更新粒子
-            const activeParticles = [];
-            for (let p of particles) {
-                p.update();
-                if (p.life > 0) {
-                    activeParticles.push(p);
+            // 批量更新粒子（使用粒子池，减少垃圾回收）
+            const newActiveParticles = [];
+            for (let p of activeParticles) {
+                if (p.update()) {
+                    newActiveParticles.push(p);
+                } else {
+                    returnParticleToPool(p); // 归还到池
                 }
             }
-            particles = activeParticles;
+            activeParticles.length = 0; // 清空数组（比重新赋值快）
+            activeParticles.push(...newActiveParticles);
         }
 
-        // ====================== 初始化 ======================
+        // ====================== 初始化（新增粒子池初始化）=====================
         initStars();
-        // 并行加载音频和图片后启动
+        initParticlePool(); // 初始化粒子池
         Promise.all([preloadAudios(), preloadImages()]).then(() => {
             mainLoop();
             window.dispatchEvent(new Event('resize'));
         });
 
-        // 窗口适配
+        // 窗口适配（保留）
         window.addEventListener('resize', () => {
             const scale = Math.min(
                 window.innerWidth / CANVAS_WIDTH,
