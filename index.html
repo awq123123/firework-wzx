@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数字烟花 - 多点触控性能优化版（音频兼容修复）</title>
+    <title>数字烟花 -王子轩</title>
     <style>
         * {
             margin: 0;
@@ -22,121 +22,94 @@
             border: none;
             max-width: 100%;
             height: auto;
-            image-rendering: pixelated; /* 减少画布渲染开销 */
-        }
-        /* 新增：音频激活提示 */
-        .audio-tip {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #fff;
-            font-size: 18px;
-            text-align: center;
-            padding: 20px;
-            background: rgba(0,0,0,0.8);
-            border-radius: 10px;
-            z-index: 100;
-            display: block;
-        }
-        .audio-tip.hide {
-            display: none;
         }
     </style>
 </head>
 <body>
-    <!-- 新增：音频激活提示 -->
-    <div class="audio-tip" id="audioTip">
-        点击屏幕激活音效<br>体验完整烟花效果
-    </div>
     <canvas id="fireworkCanvas" width="400" height="600"></canvas>
 
     <script>
-        // 核心配置（完全保留原有数值）
+        // 核心配置
         const CANVAS_WIDTH = 400;
         const CANVAS_HEIGHT = 600;
         const STAR_COUNT = 100;
         const FONT_SIZE = 20;
-        const FONT_HEIGHT = 90;
+        const FONT_HEIGHT = 95;
         const FIREWORK_SPEED = 0.2;
-        const PARTICLE_COUNT = 30;
+        const PARTICLE_COUNT = 30; // 增加粒子数量，让轨迹更明显
         const IMAGE_POS_X = CANVAS_WIDTH / 2 - 50;
         const IMAGE_POS_Y = 0;
 
-        // 性能优化配置（新增）
-        const PARTICLE_POOL_SIZE = 500; // 粒子池大小（足够容纳多点触控的粒子）
-        const TOUCH_DEBOUNCE_TIME = 50; // 触控防抖时间（ms）
-
-        // 获取画布上下文（优化渲染模式）
+        // 获取画布上下文
         const canvas = document.getElementById('fireworkCanvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: false }); // 关闭频繁读取，提升性能
+        const ctx = canvas.getContext('2d');
         canvas.width = CANVAS_WIDTH;
         canvas.height = CANVAS_HEIGHT;
-        const audioTip = document.getElementById('audioTip');
 
-        // 关键新增：音频激活状态标记
-        let audioInitiated = false; // 音频是否已初始化
-        let riseAudio, explodeAudio;
-
-        // 颜色列表（完全保留）
+        // 颜色列表
         const colorList = [
             [255,215,0], [255,140,0], [0,255,255], [127,255,212], [127,255,0],
             [0,250,154], [255,0,0], [255,69,0], [0,110,154], [255,128,128],
             [188,0,255], [255,0,239], [0,255,51]
         ];
 
-        // ====================== 音频资源初始化（核心修复）=====================
-        // 改为手动触发初始化，而非自动加载
-        function initAudios() {
-            if (audioInitiated) return; // 避免重复初始化
-            audioInitiated = true;
-            audioTip.classList.add('hide'); // 隐藏提示
+        // ====================== 音频资源初始化（修改核心）=====================
+        let riseAudio, explodeAudio;
+        let audioLoaded = false; // 标记音频是否已加载
+        let audioLoading = false; // 标记音频是否正在加载
 
-            // 初始化音频对象（容错处理增强）
-            riseAudio = new Audio();
-            riseAudio.src = './rise.mp3';
-            riseAudio.preload = 'auto';
-            riseAudio.volume = 0.7;
-            // 移除音频加载完成的依赖，避免阻塞
-            riseAudio.onerror = () => console.log('上升音效加载失败，将静音播放');
-
-            explodeAudio = new Audio();
-            explodeAudio.src = './explode.mp3';
-            explodeAudio.preload = 'auto';
-            explodeAudio.volume = 0.8;
-            explodeAudio.onerror = () => console.log('爆炸音效加载失败，将静音播放');
-
-            // 强制触发音频上下文激活（关键修复）
-            const unlockAudio = async () => {
-                try {
-                    // 先播放一个空音频激活上下文
-                    const silentAudio = new Audio();
-                    silentAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAASAAAeMwAUFBQUFCIiIiIiIiIiIjAwMDAwMDAwMDMzMzMzMzMzM////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAYHAAAAAAAAGpBbGxv////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//sQxAAB4RQAAqAIAAABQAADhggAAASgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAA=';
-                    await silentAudio.play();
-                    silentAudio.pause();
-                    silentAudio.currentTime = 0;
-                } catch (e) {
-                    console.log('音频上下文激活失败，音效将无法播放:', e);
+        function preloadAudios() {
+            return new Promise((resolve) => {
+                if (audioLoaded) {
+                    resolve();
+                    return;
                 }
-            };
-            unlockAudio();
+                
+                let loadedCount = 0;
+
+                riseAudio = new Audio();
+                riseAudio.src = './rise.mp3';
+                riseAudio.preload = 'auto';
+                riseAudio.volume = 0.7;
+                riseAudio.oncanplaythrough = () => {
+                    loadedCount++;
+                    checkLoaded();
+                };
+
+                explodeAudio = new Audio();
+                explodeAudio.src = './explode.mp3';
+                explodeAudio.preload = 'auto';
+                explodeAudio.volume = 0.8;
+                explodeAudio.oncanplaythrough = () => {
+                    loadedCount++;
+                    checkLoaded();
+                };
+
+                function handleAudioError() {
+                    loadedCount++;
+                    checkLoaded();
+                }
+                riseAudio.onerror = handleAudioError;
+                explodeAudio.onerror = handleAudioError;
+
+                function checkLoaded() {
+                    if (loadedCount >= 2) {
+                        audioLoaded = true;
+                        resolve();
+                    }
+                }
+            });
         }
 
-        // 优化音频播放函数（容错增强）
         function playAudio(audio) {
-            if (!audioInitiated || !audio) return;
-            try {
-                audio.currentTime = 0;
-                audio.play().catch(err => {
-                    // 静默失败，不阻塞其他功能
-                    console.log('音频播放失败:', err.message);
-                });
-            } catch (e) {
-                // 捕获所有异常，避免页面崩溃
-            }
+            if (!audio || !audioLoaded) return;
+            audio.currentTime = 0;
+            audio.play().catch(err => {
+                console.log('音频播放失败:', err);
+            });
         }
 
-        // ====================== 图片资源初始化（容错增强）=====================
+        // ====================== 图片资源初始化 ======================
         const images = [];
         const imagePaths = [
             './image1.png',
@@ -154,41 +127,38 @@
                     img.onload = () => {
                         images[index] = img;
                         loadedCount++;
-                        if (loadedCount === imagePaths.length) resolve();
+                        if (loadedCount === imagePaths.length) {
+                            resolve();
+                        }
                     };
                     img.onerror = () => {
                         console.error(`图片加载失败: ${path}`);
                         loadedCount++;
-                        if (loadedCount === imagePaths.length) resolve();
+                        if (loadedCount === imagePaths.length) {
+                            resolve();
+                        }
                     };
                 });
-                // 兜底：超时强制完成（避免图片加载阻塞）
-                setTimeout(() => resolve(), 3000);
             });
         }
 
-        // ====================== 星星系统（性能优化）=====================
+        // ====================== 星星系统 ======================
         let stars = [];
         function initStars() {
             stars = [];
-            // 一次性创建所有星星，避免循环内重复操作
-            const starArray = new Array(STAR_COUNT);
             for (let i = 0; i < STAR_COUNT; i++) {
-                starArray[i] = {
+                stars.push({
                     x: Math.random() * CANVAS_WIDTH,
                     y: Math.random() * CANVAS_HEIGHT,
                     size: Math.random() * 2 + 2,
                     brightness: Math.random() * 0.8 + 0.2,
                     speed: Math.random() * 0.01 + 0.01,
                     direction: Math.random() > 0.5 ? 1 : -1
-                };
+                });
             }
-            stars = starArray;
         }
 
         function updateStars() {
-            // 批量绘制星星，减少ctx调用次数
-            ctx.save();
             for (let star of stars) {
                 star.brightness += star.speed * star.direction;
                 if (star.brightness <= 0.2) {
@@ -204,95 +174,53 @@
                 ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
                 ctx.fill();
             }
-            ctx.restore();
         }
 
-        // ====================== 粒子池系统（核心性能优化）=====================
+        // ====================== 10种轨迹粒子系统（核心重构）=====================
+        // 轨迹类型枚举
         const TRAJECTORY_TYPES = {
-            0: 'SINE_WAVE',
-            1: 'CIRCULAR_WAVE',
-            2: 'SPIRAL',
-            3: 'HEART',
-            4: 'COMET',
-            5: 'LIGHTNING',
-            6: 'PETAL',
-            7: 'RAINBOW',
-            8: 'METEOR',
-            9: 'QUANTUM_RANDOM'
+            0: 'SINE_WAVE',        // 正弦波轨迹
+            1: 'CIRCULAR_WAVE',    // 圆形波纹轨迹
+            2: 'SPIRAL',           // 螺旋轨迹
+            3: 'HEART',            // 爱心轨迹
+            4: 'COMET',            // 彗星拖尾轨迹
+            5: 'LIGHTNING',        // 闪电折线轨迹
+            6: 'PETAL',            // 花瓣轨迹
+            7: 'RAINBOW',          // 彩虹弧形轨迹
+            8: 'METEOR',           // 流星轨迹
+            9: 'QUANTUM_RANDOM'    // 量子随机轨迹
         };
 
-        // 粒子池：复用粒子对象，避免频繁new和垃圾回收
-        let particlePool = [];
-        let activeParticles = [];
-
-        // 初始化粒子池
-        function initParticlePool() {
-            particlePool = [];
-            for (let i = 0; i < PARTICLE_POOL_SIZE; i++) {
-                particlePool.push(new Particle());
-            }
-        }
-
-        // 从池中获取粒子
-        function getParticleFromPool(x, y, color, trajectoryType) {
-            let particle = particlePool.pop();
-            if (!particle) particle = new Particle(); // 池空时兜底
-
-            // 重置粒子属性（复用而非新建）
-            particle.x = x;
-            particle.y = y;
-            particle.color = color;
-            particle.life = Math.floor(Math.random() * 40) + 20;
-            particle.maxLife = particle.life;
-            particle.size = Math.random() * 3 + 2;
-            particle.trajectoryType = trajectoryType;
-            particle.angle = Math.random() * Math.PI * 2;
-            particle.speed = Math.random() * 4 + 2;
-            particle.progress = 0;
-            particle.offsetX = 0;
-            particle.offsetY = 0;
-            particle.phase = Math.random() * Math.PI * 2;
-            particle.lightningSteps = [];
-            particle.heartScale = 0;
-            particle.alpha = 1;
-            particle.quantumStep = 0;
-
-            particle.initTrajectory();
-            return particle;
-        }
-
-        // 归还粒子到池
-        function returnParticleToPool(particle) {
-            if (particlePool.length < PARTICLE_POOL_SIZE) {
-                particlePool.push(particle);
-            }
-        }
-
         class Particle {
-            constructor() {
-                // 仅初始化属性，不赋值（复用时有重置逻辑）
-                this.x = 0;
-                this.y = 0;
-                this.color = [0,0,0];
-                this.life = 0;
-                this.maxLife = 0;
-                this.size = 0;
-                this.trajectoryType = '';
-                this.angle = 0;
-                this.speed = 0;
-                this.progress = 0;
-                this.offsetX = 0;
-                this.offsetY = 0;
-                this.phase = 0;
-                this.lightningSteps = [];
-                this.heartScale = 0;
-                this.alpha = 1;
-                this.quantumStep = 0;
+            constructor(x, y, color, trajectoryType) {
+                // 基础属性
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.life = Math.floor(Math.random() * 40) + 20; // 延长生命周期，显示完整轨迹
+                this.maxLife = this.life;
+                this.size = Math.random() * 3 + 2; // 粒子大小
+                
+                // 轨迹相关属性
+                this.trajectoryType = trajectoryType;
+                this.angle = Math.random() * Math.PI * 2; // 初始角度（用于圆形/螺旋等）
+                this.speed = Math.random() * 4 + 2; // 基础速度
+                this.progress = 0; // 轨迹进度（0-1）
+                this.offsetX = 0; // 偏移量（用于正弦波等）
+                this.offsetY = 0; // 偏移量
+                this.phase = Math.random() * Math.PI * 2; // 相位（用于正弦波）
+                this.lightningSteps = []; // 闪电轨迹的折点
+                this.heartScale = 0; // 爱心轨迹缩放
+                
+                // 初始化特定轨迹
+                this.initTrajectory();
             }
 
+            // 初始化不同轨迹的专属参数
             initTrajectory() {
                 switch (this.trajectoryType) {
                     case 'LIGHTNING':
+                        // 生成闪电折点
                         this.lightningSteps = [];
                         let currentX = this.x;
                         let currentY = this.y;
@@ -311,29 +239,38 @@
                 }
             }
 
+            // 10种轨迹的运动逻辑
             updateTrajectory() {
                 this.progress = 1 - (this.life / this.maxLife);
-                const speedFactor = this.speed * (1 - this.progress);
-
+                const speedFactor = this.speed * (1 - this.progress); // 减速效果
+                
                 switch (this.trajectoryType) {
+                    // 1. 正弦波轨迹：左右摆动前进
                     case 'SINE_WAVE':
                         this.angle += 0.1;
                         this.offsetX = Math.sin(this.angle * 3 + this.phase) * 20;
                         this.x += Math.cos(this.angle) * speedFactor + this.offsetX * 0.1;
                         this.y += Math.sin(this.angle) * speedFactor + Math.sin(this.progress * Math.PI) * 5;
                         break;
+                    
+                    // 2. 圆形波纹轨迹：向外扩散的同心圆
                     case 'CIRCULAR_WAVE':
-                        const radius = this.progress * 80;
+                        const radius = this.progress * 80; // 波纹半径
                         this.x = this.x + Math.cos(this.angle) * radius;
                         this.y = this.y + Math.sin(this.angle) * radius;
+                        // 波纹脉动效果
                         this.size = Math.sin(this.progress * Math.PI * 8) * 2 + 2;
                         break;
+                    
+                    // 3. 螺旋轨迹：螺旋向外扩散
                     case 'SPIRAL':
                         const spiralRadius = this.progress * 60;
                         this.angle += 0.2;
                         this.x = this.x + Math.cos(this.angle) * spiralRadius;
                         this.y = this.y + Math.sin(this.angle) * spiralRadius;
                         break;
+                    
+                    // 4. 爱心轨迹：形成爱心形状
                     case 'HEART':
                         this.heartScale += 0.1;
                         const t = this.angle;
@@ -342,11 +279,16 @@
                         this.x += heartX * this.heartScale * 0.5;
                         this.y += heartY * this.heartScale * 0.5;
                         break;
+                    
+                    // 5. 彗星轨迹：带拖尾的直线
                     case 'COMET':
                         this.x += Math.cos(this.angle) * speedFactor * 1.5;
                         this.y += Math.sin(this.angle) * speedFactor * 1.5;
+                        // 拖尾效果：粒子大小随生命周期变化
                         this.size = Math.sin(this.progress * Math.PI) * 4 + 1;
                         break;
+                    
+                    // 6. 闪电轨迹：折线前进
                     case 'LIGHTNING':
                         if (this.lightningSteps.length > 0) {
                             const stepIndex = Math.floor(this.progress * this.lightningSteps.length);
@@ -355,57 +297,69 @@
                             this.y = target.y;
                         }
                         break;
+                    
+                    // 7. 花瓣轨迹：6瓣花形状
                     case 'PETAL':
-                        const petalAngle = this.angle * 6;
+                        const petalAngle = this.angle * 6; // 6瓣
                         const petalRadius = Math.cos(petalAngle) * 20 + 30;
                         this.x = this.x + Math.cos(this.angle) * petalRadius * this.progress;
                         this.y = this.y + Math.sin(this.angle) * petalRadius * this.progress;
                         break;
+                    
+                    // 8. 彩虹轨迹：弧形
                     case 'RAINBOW':
                         const rainbowRadius = 80;
                         const rainbowAngle = this.progress * Math.PI + this.phase;
                         this.x = this.x + Math.cos(rainbowAngle) * rainbowRadius;
                         this.y = this.y + Math.sin(rainbowAngle) * rainbowRadius * 0.5;
                         break;
+                    
+                    // 9. 流星轨迹：斜向前进+尾部扩散
                     case 'METEOR':
                         this.x += Math.cos(this.angle) * speedFactor * 2;
                         this.y += Math.sin(this.angle) * speedFactor * 2 + this.progress * 5;
+                        // 尾部变亮
                         const alpha = 1 - this.progress;
                         ctx.globalAlpha = alpha;
                         break;
+                    
+                    // 10. 量子随机轨迹：随机瞬移
                     case 'QUANTUM_RANDOM':
                         this.quantumStep++;
-                        if (this.quantumStep % 3 === 0) {
+                        if (this.quantumStep % 3 === 0) { // 每3帧瞬移一次
                             this.x += (Math.random() - 0.5) * 30;
                             this.y += (Math.random() - 0.5) * 30;
                         }
                         break;
                 }
 
+                // 通用效果：粒子透明度随生命周期降低
                 this.alpha = this.life / this.maxLife;
                 ctx.globalAlpha = this.alpha > 0 ? this.alpha : 0;
             }
 
+            // 更新粒子
             update() {
                 this.life--;
-                if (this.life <= 0) {
-                    return false;
-                }
+                if (this.life <= 0) return false;
 
+                // 更新轨迹
                 this.updateTrajectory();
 
+                // 绘制粒子
                 ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fill();
 
+                // 重置透明度
                 ctx.globalAlpha = 1;
                 
                 return true;
             }
         }
 
-        // ====================== 烟花系统（完全保留逻辑）=====================
+        // ====================== 烟花系统 ======================
         class Firework {
             constructor(targetX, targetY) {
                 this.x = targetX;
@@ -415,13 +369,13 @@
                 this.drops = [CANVAS_HEIGHT / FONT_HEIGHT];
                 this.exploded = false;
                 this.riseAudioPlayed = false;
+                // 随机选择本次烟花的轨迹类型（整簇烟花统一类型，效果更美观）
                 this.trajectoryType = TRAJECTORY_TYPES[Math.floor(Math.random() * 10)];
             }
 
             update() {
                 if (this.exploded) return;
 
-                // 播放音效前检查音频是否已初始化
                 if (!this.riseAudioPlayed) {
                     playAudio(riseAudio);
                     this.riseAudioPlayed = true;
@@ -431,7 +385,7 @@
                     const text = Math.floor(Math.random() * 10).toString();
                     ctx.font = `${FONT_SIZE}px "Microsoft YaHei", "SimHei", Arial`;
                     ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
-                    const xPos = this.x - 10; // 适配FONT_SIZE=20的居中（20/2=10）
+                    const xPos = this.x - 15;
                     const yPos = this.drops[i] * FONT_HEIGHT;
                     ctx.fillText(text, xPos, yPos);
                     this.drops[i] -= this.speed;
@@ -446,7 +400,7 @@
             createParticles(x, y) {
                 playAudio(explodeAudio);
 
-                // 1/10概率显示图片（完全保留）
+                // 1/10概率显示图片
                 const rand = Math.floor(Math.random() * 10) + 1;
                 if (rand === 1) {
                     const imgIndex = Math.floor(Math.random() * 3);
@@ -455,63 +409,62 @@
                     }
                 }
 
-                // 使用粒子池创建粒子（性能优化）
+                // 生成粒子（使用随机选中的轨迹类型）
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const particle = getParticleFromPool(x, y, this.color, this.trajectoryType);
-                    activeParticles.push(particle);
+                    particles.push(new Particle(x, y, this.color, this.trajectoryType));
                 }
             }
         }
 
-        // ====================== 多点触控防抖（性能优化）=====================
+        // ====================== 全局变量 & 多点触控交互（修改核心）=====================
         let fireworks = [];
-        let lastTouchTime = {}; // 记录每个触点的最后触发时间
+        let particles = [];
 
-        function createFireworkAtPosition(clientX, clientY, touchId = -1) {
-            // 先激活音频（关键修复）
-            initAudios();
+        // 初始化音频（首次点击时执行）
+        async function initAudioOnFirstClick() {
+            if (audioLoading) return;
+            audioLoading = true;
+            await preloadAudios();
+            audioLoading = false;
+        }
 
-            // 触控防抖：同一触点短时间内不重复触发
-            if (touchId !== -1) {
-                const now = Date.now();
-                if (lastTouchTime[touchId] && now - lastTouchTime[touchId] < TOUCH_DEBOUNCE_TIME) {
-                    return;
-                }
-                lastTouchTime[touchId] = now;
-            }
-
+        function createFireworkAtPosition(clientX, clientY) {
             const rect = canvas.getBoundingClientRect();
             const clickX = (clientX - rect.left) * (CANVAS_WIDTH / rect.width);
             const clickY = (clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
-            fireworks.push(new Firework(clickX, clickY));
+            
+            // 首次点击先加载音频，再创建烟花
+            if (!audioLoaded && !audioLoading) {
+                initAudioOnFirstClick().then(() => {
+                    fireworks.push(new Firework(clickX, clickY));
+                });
+            } else {
+                fireworks.push(new Firework(clickX, clickY));
+            }
         }
 
-        // 鼠标点击（保留）
         canvas.addEventListener('click', (e) => {
             createFireworkAtPosition(e.clientX, e.clientY);
         });
 
-        // 触屏多点触控（防抖优化）
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             for (let i = 0; i < e.touches.length; i++) {
                 const touch = e.touches[i];
-                createFireworkAtPosition(touch.clientX, touch.clientY, touch.identifier);
+                createFireworkAtPosition(touch.clientX, touch.clientY);
             }
         }, { passive: false });
 
-        // ====================== 主循环（性能优化+兜底）=====================
+        // ====================== 主循环 ======================
         function mainLoop() {
-            // 使用requestAnimationFrame的时间戳控制帧率（避免过度渲染）
             requestAnimationFrame(mainLoop);
 
-            // 优化画布清空：使用fillRect而非clearRect，减少重绘
             ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
             updateStars();
 
-            // 批量更新烟花（减少数组操作）
+            // 更新烟花
             const activeFireworks = [];
             for (let fw of fireworks) {
                 fw.update();
@@ -521,42 +474,31 @@
             }
             fireworks = activeFireworks;
 
-            // 批量更新粒子（使用粒子池，减少垃圾回收）
-            const newActiveParticles = [];
-            for (let p of activeParticles) {
+            // 更新粒子
+            const activeParticles = [];
+            for (let p of particles) {
                 if (p.update()) {
-                    newActiveParticles.push(p);
-                } else {
-                    returnParticleToPool(p); // 归还到池
+                    activeParticles.push(p);
                 }
             }
-            activeParticles.length = 0; // 清空数组（比重新赋值快）
-            activeParticles.push(...newActiveParticles);
+            particles = activeParticles;
         }
 
-        // ====================== 初始化（核心修复：移除音频依赖）=====================
+        // ====================== 初始化（修改核心）=====================
         initStars();
-        initParticlePool(); // 初始化粒子池
-        // 只预加载图片，音频改为用户交互后加载
+        // 只预加载图片，音频改为点击时加载
         preloadImages().then(() => {
             mainLoop();
             window.dispatchEvent(new Event('resize'));
         });
 
-        // 窗口适配（保留）
+        // 窗口适配
         window.addEventListener('resize', () => {
             const scale = Math.min(
                 window.innerWidth / CANVAS_WIDTH,
                 window.innerHeight / CANVAS_HEIGHT
             );
             canvas.style.transform = `scale(${scale})`;
-        });
-
-        // 兜底：页面加载完成后强制渲染画布，避免黑屏
-        window.addEventListener('load', () => {
-            ctx.fillStyle = 'rgba(0,0,0,0.1)';
-            ctx.fillRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
-            updateStars();
         });
     </script>
 </body>
