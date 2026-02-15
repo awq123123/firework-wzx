@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数字烟花 - 多点触控性能优化版</title>
+    <title>数字烟花 - 多点触控性能优化版（音频兼容修复）</title>
     <style>
         * {
             margin: 0;
@@ -24,9 +24,31 @@
             height: auto;
             image-rendering: pixelated; /* 减少画布渲染开销 */
         }
+        /* 新增：音频激活提示 */
+        .audio-tip {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 10px;
+            z-index: 100;
+            display: block;
+        }
+        .audio-tip.hide {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <!-- 新增：音频激活提示 -->
+    <div class="audio-tip" id="audioTip">
+        点击屏幕激活音效<br>体验完整烟花效果
+    </div>
     <canvas id="fireworkCanvas" width="400" height="600"></canvas>
 
     <script>
@@ -50,6 +72,11 @@
         const ctx = canvas.getContext('2d', { willReadFrequently: false }); // 关闭频繁读取，提升性能
         canvas.width = CANVAS_WIDTH;
         canvas.height = CANVAS_HEIGHT;
+        const audioTip = document.getElementById('audioTip');
+
+        // 关键新增：音频激活状态标记
+        let audioInitiated = false; // 音频是否已初始化
+        let riseAudio, explodeAudio;
 
         // 颜色列表（完全保留）
         const colorList = [
@@ -58,55 +85,58 @@
             [188,0,255], [255,0,239], [0,255,51]
         ];
 
-        // ====================== 音频资源初始化（完全保留）=====================
-        let riseAudio, explodeAudio;
-        
-        function preloadAudios() {
-            return new Promise((resolve) => {
-                let loadedCount = 0;
+        // ====================== 音频资源初始化（核心修复）=====================
+        // 改为手动触发初始化，而非自动加载
+        function initAudios() {
+            if (audioInitiated) return; // 避免重复初始化
+            audioInitiated = true;
+            audioTip.classList.add('hide'); // 隐藏提示
 
-                riseAudio = new Audio();
-                riseAudio.src = './rise.mp3';
-                riseAudio.preload = 'auto';
-                riseAudio.volume = 0.7;
-                riseAudio.oncanplaythrough = () => {
-                    loadedCount++;
-                    checkLoaded();
-                };
+            // 初始化音频对象（容错处理增强）
+            riseAudio = new Audio();
+            riseAudio.src = './rise.mp3';
+            riseAudio.preload = 'auto';
+            riseAudio.volume = 0.7;
+            // 移除音频加载完成的依赖，避免阻塞
+            riseAudio.onerror = () => console.log('上升音效加载失败，将静音播放');
 
-                explodeAudio = new Audio();
-                explodeAudio.src = './explode.mp3';
-                explodeAudio.preload = 'auto';
-                explodeAudio.volume = 0.8;
-                explodeAudio.oncanplaythrough = () => {
-                    loadedCount++;
-                    checkLoaded();
-                };
+            explodeAudio = new Audio();
+            explodeAudio.src = './explode.mp3';
+            explodeAudio.preload = 'auto';
+            explodeAudio.volume = 0.8;
+            explodeAudio.onerror = () => console.log('爆炸音效加载失败，将静音播放');
 
-                function handleAudioError() {
-                    loadedCount++;
-                    checkLoaded();
+            // 强制触发音频上下文激活（关键修复）
+            const unlockAudio = async () => {
+                try {
+                    // 先播放一个空音频激活上下文
+                    const silentAudio = new Audio();
+                    silentAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAASAAAeMwAUFBQUFCIiIiIiIiIiIjAwMDAwMDAwMDMzMzMzMzMzM////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAYHAAAAAAAAGpBbGxv////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//sQxAAB4RQAAqAIAAABQAADhggAAASgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAAABAAAB4AJAAABWAAAAcQAAAOAYAAABhgAAAPgAAAOAAAD9ggAAAPgAAA=';
+                    await silentAudio.play();
+                    silentAudio.pause();
+                    silentAudio.currentTime = 0;
+                } catch (e) {
+                    console.log('音频上下文激活失败，音效将无法播放:', e);
                 }
-                riseAudio.onerror = handleAudioError;
-                explodeAudio.onerror = handleAudioError;
-
-                function checkLoaded() {
-                    if (loadedCount >= 2) {
-                        resolve();
-                    }
-                }
-            });
+            };
+            unlockAudio();
         }
 
+        // 优化音频播放函数（容错增强）
         function playAudio(audio) {
-            if (!audio) return;
-            audio.currentTime = 0;
-            audio.play().catch(err => {
-                console.log('音频播放失败（需先点击页面激活）:', err);
-            });
+            if (!audioInitiated || !audio) return;
+            try {
+                audio.currentTime = 0;
+                audio.play().catch(err => {
+                    // 静默失败，不阻塞其他功能
+                    console.log('音频播放失败:', err.message);
+                });
+            } catch (e) {
+                // 捕获所有异常，避免页面崩溃
+            }
         }
 
-        // ====================== 图片资源初始化（完全保留）=====================
+        // ====================== 图片资源初始化（容错增强）=====================
         const images = [];
         const imagePaths = [
             './image1.png',
@@ -124,18 +154,16 @@
                     img.onload = () => {
                         images[index] = img;
                         loadedCount++;
-                        if (loadedCount === imagePaths.length) {
-                            resolve();
-                        }
+                        if (loadedCount === imagePaths.length) resolve();
                     };
                     img.onerror = () => {
                         console.error(`图片加载失败: ${path}`);
                         loadedCount++;
-                        if (loadedCount === imagePaths.length) {
-                            resolve();
-                        }
+                        if (loadedCount === imagePaths.length) resolve();
                     };
                 });
+                // 兜底：超时强制完成（避免图片加载阻塞）
+                setTimeout(() => resolve(), 3000);
             });
         }
 
@@ -393,6 +421,7 @@
             update() {
                 if (this.exploded) return;
 
+                // 播放音效前检查音频是否已初始化
                 if (!this.riseAudioPlayed) {
                     playAudio(riseAudio);
                     this.riseAudioPlayed = true;
@@ -402,7 +431,7 @@
                     const text = Math.floor(Math.random() * 10).toString();
                     ctx.font = `${FONT_SIZE}px "Microsoft YaHei", "SimHei", Arial`;
                     ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
-                    const xPos = this.x - 15;
+                    const xPos = this.x - 10; // 适配FONT_SIZE=20的居中（20/2=10）
                     const yPos = this.drops[i] * FONT_HEIGHT;
                     ctx.fillText(text, xPos, yPos);
                     this.drops[i] -= this.speed;
@@ -439,6 +468,9 @@
         let lastTouchTime = {}; // 记录每个触点的最后触发时间
 
         function createFireworkAtPosition(clientX, clientY, touchId = -1) {
+            // 先激活音频（关键修复）
+            initAudios();
+
             // 触控防抖：同一触点短时间内不重复触发
             if (touchId !== -1) {
                 const now = Date.now();
@@ -468,7 +500,7 @@
             }
         }, { passive: false });
 
-        // ====================== 主循环（性能优化）=====================
+        // ====================== 主循环（性能优化+兜底）=====================
         function mainLoop() {
             // 使用requestAnimationFrame的时间戳控制帧率（避免过度渲染）
             requestAnimationFrame(mainLoop);
@@ -502,10 +534,11 @@
             activeParticles.push(...newActiveParticles);
         }
 
-        // ====================== 初始化（新增粒子池初始化）=====================
+        // ====================== 初始化（核心修复：移除音频依赖）=====================
         initStars();
         initParticlePool(); // 初始化粒子池
-        Promise.all([preloadAudios(), preloadImages()]).then(() => {
+        // 只预加载图片，音频改为用户交互后加载
+        preloadImages().then(() => {
             mainLoop();
             window.dispatchEvent(new Event('resize'));
         });
@@ -517,6 +550,13 @@
                 window.innerHeight / CANVAS_HEIGHT
             );
             canvas.style.transform = `scale(${scale})`;
+        });
+
+        // 兜底：页面加载完成后强制渲染画布，避免黑屏
+        window.addEventListener('load', () => {
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+            updateStars();
         });
     </script>
 </body>
